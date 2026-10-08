@@ -1,0 +1,17 @@
+[package]
+name = "gray-videogen"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.91"
+license = "MIT"
+description = "Async video generation across FAL/DeepInfra/xAI with persisted job polling. Port of hermes' video_gen plugins."
+
+[[bin]]
+name = "gray-videogen"
+path = "src/main.rs"
+
+[dependencies]
+serde_json = "1"
+
+[profile.release]
+strip = true

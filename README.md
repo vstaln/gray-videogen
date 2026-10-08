@@ -1,8 +1,15 @@
-# gray-videogen
+<p align="center">
+  <img src="assets/gray-logo.svg" alt="gray" width="96">
+</p>
+<h1 align="center">gray-videogen</h1>
+<p align="center">Async text-to-video across FAL, DeepInfra, and xAI with persisted job polling.</p>
+<p align="center">
+  <a href="https://github.com/vstaln/gray-videogen/blob/main/LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
+  <img alt="gray plugin" src="https://img.shields.io/badge/gray-plugin-7aa2f7.svg">
+  <img alt="rust" src="https://img.shields.io/badge/built%20with-rust-orange.svg">
+</p>
 
-Async text-to-video across FAL / DeepInfra / xAI with persisted job polling. Port of hermes' video_gen plugins.
-
-A sidecar plugin for [gray](https://github.com/vstaln/gray).
+Async text-to-video across FAL / DeepInfra / xAI with persisted job polling.
 
 ## What it does
 
@@ -39,3 +46,7 @@ cargo test
 gray account check      # entry point + manifest handshake
 gray account publish    # check → build → release → publish to the gray registry
 ```
+
+---
+Part of the [gray](https://github.com/vstaln/gray) plugin ecosystem —
+the open-source AI agent harness. <https://gray.alignment.id>

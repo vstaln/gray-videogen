@@ -48,7 +48,7 @@ fn manifest() -> Value {
 fn state_dir() -> PathBuf {
     let home = std::env::var_os("GRAY_HOME")
         .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".gray")))
+        .or_else(|| std::env::home_dir().map(|h| h.join(".gray")))
         .unwrap_or_else(|| PathBuf::from("."));
     home.join("videogen")
 }
@@ -83,7 +83,10 @@ fn split_status(out: std::process::Output) -> Result<(u16, String), String> {
     let (body, status) = text.rsplit_once('\n').unwrap_or((&text, "0"));
     let status: u16 = status.trim().parse().unwrap_or(0);
     if status == 0 && !out.status.success() {
-        return Err(format!("curl failed: {}", String::from_utf8_lossy(&out.stderr).trim()));
+        return Err(format!(
+            "curl failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
     }
     Ok((status, body.to_string()))
 }
@@ -98,8 +101,23 @@ fn auth_header(kind: &str, token: &str) -> String {
 
 fn post_json(url: &str, kind: &str, token: &str, body: &Value) -> Result<(u16, String), String> {
     let out = std::process::Command::new("curl")
-        .args(["-sS", "--max-time", "60", "-w", "\n%{http_code}", "-X", "POST", url])
-        .args(["-H", &auth_header(kind, token), "-H", "Content-Type: application/json", "-d"])
+        .args([
+            "-sS",
+            "--max-time",
+            "60",
+            "-w",
+            "\n%{http_code}",
+            "-X",
+            "POST",
+            url,
+        ])
+        .args([
+            "-H",
+            &auth_header(kind, token),
+            "-H",
+            "Content-Type: application/json",
+            "-d",
+        ])
         .arg(body.to_string())
         .output()
         .map_err(|e| format!("couldn't run curl: {e}"))?;
@@ -107,7 +125,13 @@ fn post_json(url: &str, kind: &str, token: &str, body: &Value) -> Result<(u16, S
 }
 
 fn get(url: &str, kind: &str, token: &str) -> Result<(u16, String), String> {
-    let mut args: Vec<String> = vec!["-sS".into(), "--max-time".into(), "30".into(), "-w".into(), "\n%{http_code}".into()];
+    let mut args: Vec<String> = vec![
+        "-sS".into(),
+        "--max-time".into(),
+        "30".into(),
+        "-w".into(),
+        "\n%{http_code}".into(),
+    ];
     if !token.is_empty() {
         args.push("-H".into());
         args.push(auth_header(kind, token));
@@ -127,7 +151,11 @@ fn api_err(provider: &str, status: u16, body: &str) -> String {
             v.pointer("/error/message")
                 .or_else(|| v.pointer("/error"))
                 .or_else(|| v.pointer("/detail"))
-                .map(|d| d.as_str().map(str::to_string).unwrap_or_else(|| d.to_string()))
+                .map(|d| {
+                    d.as_str()
+                        .map(str::to_string)
+                        .unwrap_or_else(|| d.to_string())
+                })
         })
         .unwrap_or_else(|| body.chars().take(300).collect());
     format!("{provider} → HTTP {status}: {detail}")
@@ -143,8 +171,8 @@ fn out_path(arg: Option<&str>, session: &Value) -> PathBuf {
         name = format!("video-{ts}.mp4");
     }
     let path = if let Some(rest) = name.strip_prefix("~/") {
-        std::env::var_os("HOME")
-            .map(|h| PathBuf::from(h).join(rest))
+        std::env::home_dir()
+            .map(|h| h.join(rest))
             .unwrap_or_else(|| PathBuf::from(&name))
     } else {
         PathBuf::from(&name)
@@ -190,7 +218,13 @@ fn providers() -> Vec<(&'static str, &'static str, &'static str)> {
     ]
 }
 
-fn submit(provider: &str, token: &str, model: &str, prompt: &str, seconds: i64) -> Result<Value, String> {
+fn submit(
+    provider: &str,
+    token: &str,
+    model: &str,
+    prompt: &str,
+    seconds: i64,
+) -> Result<Value, String> {
     match provider {
         "fal" => {
             let body = json!({
@@ -210,10 +244,15 @@ fn submit(provider: &str, token: &str, model: &str, prompt: &str, seconds: i64) 
             if status_url.is_empty() {
                 // Synchronous answer (rare on queue): treat as done.
                 if let Some(u) = v.pointer("/video/url").and_then(Value::as_str) {
-                    return Ok(json!({"provider": "fal", "job_id": format!("fal-{request_id}"),
-                                     "status": "done", "video_url": u}));
+                    return Ok(
+                        json!({"provider": "fal", "job_id": format!("fal-{request_id}"),
+                                     "status": "done", "video_url": u}),
+                    );
                 }
-                return Err(format!("fal submit gave no status_url: {}", text.chars().take(200).collect::<String>()));
+                return Err(format!(
+                    "fal submit gave no status_url: {}",
+                    text.chars().take(200).collect::<String>()
+                ));
             }
             Ok(json!({
                 "provider": "fal", "job_id": format!("fal-{request_id}"),
@@ -235,7 +274,10 @@ fn submit(provider: &str, token: &str, model: &str, prompt: &str, seconds: i64) 
             }
             let id = v.get("id").and_then(Value::as_str).unwrap_or("");
             if id.is_empty() {
-                return Err(format!("deepinfra submit gave no job id: {}", text.chars().take(200).collect::<String>()));
+                return Err(format!(
+                    "deepinfra submit gave no job id: {}",
+                    text.chars().take(200).collect::<String>()
+                ));
             }
             Ok(json!({
                 "provider": "deepinfra", "job_id": format!("deepinfra-{id}"),
@@ -260,7 +302,10 @@ fn submit(provider: &str, token: &str, model: &str, prompt: &str, seconds: i64) 
             }
             let id = v.get("request_id").and_then(Value::as_str).unwrap_or("");
             if id.is_empty() {
-                return Err(format!("xai submit gave no request_id: {}", text.chars().take(200).collect::<String>()));
+                return Err(format!(
+                    "xai submit gave no request_id: {}",
+                    text.chars().take(200).collect::<String>()
+                ));
             }
             Ok(json!({
                 "provider": "xai", "job_id": format!("xai-{id}"),
@@ -294,31 +339,40 @@ fn check_job(job: &Value) -> Result<Value, String> {
     }
     let mut job = job.clone();
     match provider {
-        "fal" => {
-            match v.get("status").and_then(Value::as_str).unwrap_or("") {
-                "COMPLETED" => {
-                    let response_url = job.get("response_url").and_then(Value::as_str).unwrap_or("");
-                    let (rs, rtext) = get(response_url, "fal", &token)?;
-                    let rv: Value = serde_json::from_str(&rtext).unwrap_or(json!({}));
-                    if !(200..300).contains(&rs) {
-                        return Err(api_err("fal", rs, &rtext));
-                    }
-                    let u = rv.pointer("/video/url").and_then(Value::as_str)
-                        .ok_or_else(|| format!("fal result had no video.url: {}", rtext.chars().take(200).collect::<String>()))?;
-                    job["status"] = json!("done");
-                    job["video_url"] = json!(u);
+        "fal" => match v.get("status").and_then(Value::as_str).unwrap_or("") {
+            "COMPLETED" => {
+                let response_url = job
+                    .get("response_url")
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                let (rs, rtext) = get(response_url, "fal", &token)?;
+                let rv: Value = serde_json::from_str(&rtext).unwrap_or(json!({}));
+                if !(200..300).contains(&rs) {
+                    return Err(api_err("fal", rs, &rtext));
                 }
-                "FAILED" | "CANCELLED" => {
-                    job["status"] = json!("failed");
-                    job["error"] = json!(text.chars().take(200).collect::<String>());
-                }
-                s => job["status"] = json!(if s.is_empty() { "running" } else { s }),
+                let u = rv
+                    .pointer("/video/url")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| {
+                        format!(
+                            "fal result had no video.url: {}",
+                            rtext.chars().take(200).collect::<String>()
+                        )
+                    })?;
+                job["status"] = json!("done");
+                job["video_url"] = json!(u);
             }
-        }
+            "FAILED" | "CANCELLED" => {
+                job["status"] = json!("failed");
+                job["error"] = json!(text.chars().take(200).collect::<String>());
+            }
+            s => job["status"] = json!(if s.is_empty() { "running" } else { s }),
+        },
         "deepinfra" => {
             match v.get("status").and_then(Value::as_str).unwrap_or("") {
                 "succeeded" | "completed" => {
-                    let url = v.pointer("/data/0/url")
+                    let url = v
+                        .pointer("/data/0/url")
                         .or_else(|| v.pointer("/video/url"))
                         .and_then(Value::as_str)
                         .map(str::to_string);
@@ -329,7 +383,11 @@ fn check_job(job: &Value) -> Result<Value, String> {
                         }
                         None => {
                             // Fall back to the content endpoint.
-                            let content_url = job.get("content_url").and_then(Value::as_str).unwrap_or("").to_string();
+                            let content_url = job
+                                .get("content_url")
+                                .and_then(Value::as_str)
+                                .unwrap_or("")
+                                .to_string();
                             job["status"] = json!("done");
                             job["content_fetch"] = json!(content_url);
                         }
@@ -343,9 +401,16 @@ fn check_job(job: &Value) -> Result<Value, String> {
             }
         }
         "xai" => {
-            match v.get("status").and_then(Value::as_str).unwrap_or("").to_lowercase().as_str() {
+            match v
+                .get("status")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_lowercase()
+                .as_str()
+            {
                 "done" => {
-                    let u = v.pointer("/video/file_output/public_url")
+                    let u = v
+                        .pointer("/video/file_output/public_url")
                         .or_else(|| v.pointer("/video/url"))
                         .and_then(Value::as_str)
                         .ok_or("xai job done but no video url")?;
@@ -383,10 +448,18 @@ fn finish_download(job: &Value, session: &Value) -> Result<String, String> {
     let provider = job.get("provider").and_then(Value::as_str).unwrap_or("");
     if let Some(u) = job.get("video_url").and_then(Value::as_str) {
         let bytes = download(u, &path)?;
-        return Ok(format!("saved {} ({} bytes, {provider})", path.display(), bytes));
+        return Ok(format!(
+            "saved {} ({} bytes, {provider})",
+            path.display(),
+            bytes
+        ));
     }
     if let Some(content) = job.get("content_fetch").and_then(Value::as_str) {
-        let env = providers().iter().find(|(n, _, _)| *n == provider).map(|(_, e, _)| *e).unwrap_or("");
+        let env = providers()
+            .iter()
+            .find(|(n, _, _)| *n == provider)
+            .map(|(_, e, _)| *e)
+            .unwrap_or("");
         let token = env_key(env)?;
         // Content endpoints return the bytes directly.
         if let Some(parent) = path.parent() {
@@ -405,35 +478,59 @@ fn finish_download(job: &Value, session: &Value) -> Result<String, String> {
             return Err("content download failed".into());
         }
         let bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
-        return Ok(format!("saved {} ({} bytes, {provider})", path.display(), bytes));
+        return Ok(format!(
+            "saved {} ({} bytes, {provider})",
+            path.display(),
+            bytes
+        ));
     }
     Err(format!("job {job_id} done but no video location recorded"))
 }
 
 fn act_generate(args: &Value, session: &Value) -> Result<String, String> {
-    let prompt = args.get("prompt").and_then(Value::as_str).unwrap_or("").trim();
+    let prompt = args
+        .get("prompt")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim();
     if prompt.is_empty() {
         return Err("video_gen needs a prompt".into());
     }
-    let seconds = args.get("seconds").and_then(Value::as_i64).unwrap_or(5).clamp(1, 15);
+    let seconds = args
+        .get("seconds")
+        .and_then(Value::as_i64)
+        .unwrap_or(5)
+        .clamp(1, 15);
     let model_arg = args.get("model").and_then(Value::as_str).unwrap_or("");
-    let requested = args.get("provider").and_then(Value::as_str).unwrap_or("auto");
+    let requested = args
+        .get("provider")
+        .and_then(Value::as_str)
+        .unwrap_or("auto");
     let out = out_path(args.get("out").and_then(Value::as_str), session);
 
     let targets: Vec<(&str, &str, &str)> = if requested == "auto" || requested.is_empty() {
         providers()
             .into_iter()
-            .filter(|(_, env, _)| std::env::var(env).map(|v| !v.trim().is_empty()).unwrap_or(false))
+            .filter(|(_, env, _)| {
+                std::env::var(env)
+                    .map(|v| !v.trim().is_empty())
+                    .unwrap_or(false)
+            })
             .collect()
     } else {
         match providers().into_iter().find(|(n, _, _)| *n == requested) {
             Some(p) => vec![p],
-            None => return Err(format!("unknown provider '{requested}' — fal|deepinfra|xai")),
+            None => {
+                return Err(format!(
+                    "unknown provider '{requested}' — fal|deepinfra|xai"
+                ));
+            }
         }
     };
     if targets.is_empty() {
         return Err(if requested == "auto" || requested.is_empty() {
-            "no video provider configured — set one of FAL_KEY, DEEPINFRA_API_KEY, XAI_API_KEY".into()
+            "no video provider configured — set one of FAL_KEY, DEEPINFRA_API_KEY, XAI_API_KEY"
+                .into()
         } else {
             format!("provider '{requested}' selected but its key is not set")
         });
@@ -455,17 +552,26 @@ fn act_generate(args: &Value, session: &Value) -> Result<String, String> {
         };
         match submit(name, &token, &model, prompt, seconds) {
             Ok(mut job) => {
-                let job_id = job.get("job_id").and_then(Value::as_str).unwrap_or("?").to_string();
+                let job_id = job
+                    .get("job_id")
+                    .and_then(Value::as_str)
+                    .unwrap_or("?")
+                    .to_string();
                 job["out"] = json!(out.to_string_lossy());
                 job["prompt"] = json!(prompt);
                 job["model"] = json!(model);
-                job["submitted_at"] = json!(std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs());
+                job["submitted_at"] = json!(
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs()
+                );
                 if job["status"] == "done" {
                     return finish_download(&job, session);
                 }
                 // Poll within the host tool TTL, then persist + hand back the id.
-                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(POLL_WINDOW_S);
+                let deadline =
+                    std::time::Instant::now() + std::time::Duration::from_secs(POLL_WINDOW_S);
                 loop {
                     std::thread::sleep(std::time::Duration::from_secs(POLL_STEP_S));
                     match check_job(&job) {
@@ -512,7 +618,10 @@ fn act_generate(args: &Value, session: &Value) -> Result<String, String> {
 
 fn persist(job: &Value) {
     let mut jobs = load_jobs();
-    let id = job.get("job_id").and_then(Value::as_str).unwrap_or("unknown");
+    let id = job
+        .get("job_id")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown");
     jobs[id] = job.clone();
     save_jobs(&jobs);
 }
@@ -525,7 +634,13 @@ fn act_status(args: &Value, session: &Value) -> Result<String, String> {
             .as_object()
             .map(|m| {
                 m.iter()
-                    .map(|(id, j)| format!("{id}  {}  {}", j["status"].as_str().unwrap_or("?"), j["prompt"].as_str().unwrap_or("")))
+                    .map(|(id, j)| {
+                        format!(
+                            "{id}  {}  {}",
+                            j["status"].as_str().unwrap_or("?"),
+                            j["prompt"].as_str().unwrap_or("")
+                        )
+                    })
                     .collect()
             })
             .unwrap_or_default();
@@ -538,7 +653,9 @@ fn act_status(args: &Value, session: &Value) -> Result<String, String> {
     }
     let mut jobs = load_jobs();
     let Some(job) = jobs.get(job_id).cloned() else {
-        return Err(format!("unknown job '{job_id}' — run video_gen {{action:\"status\"}} to list"));
+        return Err(format!(
+            "unknown job '{job_id}' — run video_gen {{action:\"status\"}} to list"
+        ));
     };
     let job = if job["status"] == "done" || job["status"] == "failed" {
         job
@@ -550,7 +667,10 @@ fn act_status(args: &Value, session: &Value) -> Result<String, String> {
     };
     match job["status"].as_str().unwrap_or("running") {
         "done" => finish_download(&job, session),
-        "failed" => Err(format!("job {job_id} failed: {}", job["error"].as_str().unwrap_or(""))),
+        "failed" => Err(format!(
+            "job {job_id} failed: {}",
+            job["error"].as_str().unwrap_or("")
+        )),
         s => Ok(format!("job {job_id} still running ({s})")),
     }
 }
@@ -559,7 +679,11 @@ fn call_tool(name: &str, args: &Value, session: &Value) -> Result<String, String
     if name != "video_gen" {
         return Err(format!("unknown tool: {name}"));
     }
-    match args.get("action").and_then(Value::as_str).unwrap_or("generate") {
+    match args
+        .get("action")
+        .and_then(Value::as_str)
+        .unwrap_or("generate")
+    {
         "status" | "fetch" => act_status(args, session),
         "generate" => act_generate(args, session),
         other => Err(format!("unknown action '{other}' — generate|status|fetch")),
@@ -569,7 +693,11 @@ fn call_tool(name: &str, args: &Value, session: &Value) -> Result<String, String
 fn run_command(argv: &[&str]) -> String {
     let configured: Vec<&str> = providers()
         .iter()
-        .filter(|(_, env, _)| std::env::var(env).map(|v| !v.trim().is_empty()).unwrap_or(false))
+        .filter(|(_, env, _)| {
+            std::env::var(env)
+                .map(|v| !v.trim().is_empty())
+                .unwrap_or(false)
+        })
         .map(|(n, _, _)| *n)
         .collect();
     let mut jobs_note = String::new();
@@ -583,7 +711,11 @@ fn run_command(argv: &[&str]) -> String {
     format!(
         "gray-videogen {} — video_gen tool. Providers probed in order: fal → deepinfra → xai. Configured: {}.{}",
         env!("CARGO_PKG_VERSION"),
-        if configured.is_empty() { "none".into() } else { configured.join(", ") },
+        if configured.is_empty() {
+            "none".into()
+        } else {
+            configured.join(", ")
+        },
         jobs_note,
     )
 }
@@ -632,7 +764,9 @@ fn main() -> std::io::Result<()> {
     let mut stdout = std::io::stdout();
     for line in stdin.lock().lines() {
         let line = line?;
-        let Ok(req) = serde_json::from_str::<Value>(&line) else { continue };
+        let Ok(req) = serde_json::from_str::<Value>(&line) else {
+            continue;
+        };
         let (reply, exit) = handle(&req);
         if let Some(reply) = reply {
             writeln!(stdout, "{reply}")?;
@@ -655,7 +789,8 @@ mod tests {
     struct TempHome;
     impl TempHome {
         fn new() -> Self {
-            let dir = std::env::temp_dir().join(format!("gray-videogen-test-{}", std::process::id()));
+            let dir =
+                std::env::temp_dir().join(format!("gray-videogen-test-{}", std::process::id()));
             let _ = std::fs::remove_dir_all(&dir);
             std::fs::create_dir_all(&dir).unwrap();
             unsafe { std::env::set_var("GRAY_HOME", &dir) };
@@ -667,13 +802,16 @@ mod tests {
     }
     impl Drop for TempHome {
         fn drop(&mut self) {
-            let dir = std::env::temp_dir().join(format!("gray-videogen-test-{}", std::process::id()));
+            let dir =
+                std::env::temp_dir().join(format!("gray-videogen-test-{}", std::process::id()));
             let _ = std::fs::remove_dir_all(&dir);
         }
     }
 
     fn call(method: &str, params: Value) -> Value {
-        handle(&json!({ "id": 1, "method": method, "params": params })).0.unwrap()
+        handle(&json!({ "id": 1, "method": method, "params": params }))
+            .0
+            .unwrap()
     }
 
     fn tool(args: Value) -> Value {

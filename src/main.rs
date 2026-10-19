@@ -99,8 +99,36 @@ fn auth_header(kind: &str, token: &str) -> String {
     }
 }
 
+fn private_header_file(header: &str) -> Option<(PathBuf, String)> {
+    use std::io::Write;
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let path = std::env::temp_dir().join(format!("gray-hdr-{}-{nanos:x}", std::process::id()));
+    let mut o = std::fs::OpenOptions::new();
+    o.create_new(true).write(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        o.mode(0o600);
+    }
+    match o.open(&path).and_then(|mut f| f.write_all(header.as_bytes())) {
+        Ok(()) => Some((path.clone(), format!("@{}", path.display()))),
+        Err(_) => {
+            let _ = std::fs::remove_file(&path);
+            None
+        }
+    }
+}
+
 fn post_json(url: &str, kind: &str, token: &str, body: &Value) -> Result<(u16, String), String> {
-    let out = std::process::Command::new("curl")
+    let hdr = private_header_file(&auth_header(kind, token));
+    let hdr_arg = hdr
+        .as_ref()
+        .map(|(_, a)| a.clone())
+        .unwrap_or_else(|| auth_header(kind, token));
+    let res = std::process::Command::new("curl")
         .args([
             "-sS",
             "--max-time",
@@ -113,14 +141,17 @@ fn post_json(url: &str, kind: &str, token: &str, body: &Value) -> Result<(u16, S
         ])
         .args([
             "-H",
-            &auth_header(kind, token),
+            &hdr_arg,
             "-H",
             "Content-Type: application/json",
             "-d",
         ])
         .arg(body.to_string())
-        .output()
-        .map_err(|e| format!("couldn't run curl: {e}"))?;
+        .output();
+    if let Some((p, _)) = &hdr {
+        let _ = std::fs::remove_file(p);
+    }
+    let out = res.map_err(|e| format!("couldn't run curl: {e}"))?;
     split_status(out)
 }
 
@@ -132,15 +163,25 @@ fn get(url: &str, kind: &str, token: &str) -> Result<(u16, String), String> {
         "-w".into(),
         "\n%{http_code}".into(),
     ];
+    let hdr = if token.is_empty() {
+        None
+    } else {
+        private_header_file(&auth_header(kind, token))
+    };
     if !token.is_empty() {
         args.push("-H".into());
-        args.push(auth_header(kind, token));
+        args.push(
+            hdr.as_ref()
+                .map(|(_, a)| a.clone())
+                .unwrap_or_else(|| auth_header(kind, token)),
+        );
     }
     args.push(url.into());
-    let out = std::process::Command::new("curl")
-        .args(&args)
-        .output()
-        .map_err(|e| format!("couldn't run curl: {e}"))?;
+    let res = std::process::Command::new("curl").args(&args).output();
+    if let Some((p, _)) = &hdr {
+        let _ = std::fs::remove_file(p);
+    }
+    let out = res.map_err(|e| format!("couldn't run curl: {e}"))?;
     split_status(out)
 }
 
@@ -467,13 +508,21 @@ fn finish_download(job: &Value, session: &Value) -> Result<String, String> {
                 std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
             }
         }
-        let status = std::process::Command::new("curl")
+        let hdr = private_header_file(&auth_header("bearer", &token));
+        let hdr_arg = hdr
+            .as_ref()
+            .map(|(_, a)| a.clone())
+            .unwrap_or_else(|| auth_header("bearer", &token));
+        let res = std::process::Command::new("curl")
             .args(["-sSL", "--max-time", "180", "-o"])
             .arg(&path)
-            .args(["-H", &auth_header("bearer", &token)])
+            .args(["-H", &hdr_arg])
             .arg(content)
-            .status()
-            .map_err(|e| format!("couldn't run curl: {e}"))?;
+            .status();
+        if let Some((p, _)) = &hdr {
+            let _ = std::fs::remove_file(p);
+        }
+        let status = res.map_err(|e| format!("couldn't run curl: {e}"))?;
         if !status.success() {
             return Err("content download failed".into());
         }

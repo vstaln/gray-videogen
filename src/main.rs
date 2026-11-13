@@ -40,6 +40,7 @@ fn manifest() -> Value {
             }
         }],
         "commands": ["/videogen"],
+        "command_descriptions": {"/videogen": "show video providers and pending jobs"},
     })
 }
 

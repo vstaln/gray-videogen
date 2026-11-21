@@ -114,7 +114,10 @@ fn private_header_file(header: &str) -> Option<(PathBuf, String)> {
         use std::os::unix::fs::OpenOptionsExt;
         o.mode(0o600);
     }
-    match o.open(&path).and_then(|mut f| f.write_all(header.as_bytes())) {
+    match o
+        .open(&path)
+        .and_then(|mut f| f.write_all(header.as_bytes()))
+    {
         Ok(()) => Some((path.clone(), format!("@{}", path.display()))),
         Err(_) => {
             let _ = std::fs::remove_file(&path);
@@ -140,13 +143,7 @@ fn post_json(url: &str, kind: &str, token: &str, body: &Value) -> Result<(u16, S
             "POST",
             url,
         ])
-        .args([
-            "-H",
-            &hdr_arg,
-            "-H",
-            "Content-Type: application/json",
-            "-d",
-        ])
+        .args(["-H", &hdr_arg, "-H", "Content-Type: application/json", "-d"])
         .arg(body.to_string())
         .output();
     if let Some((p, _)) = &hdr {

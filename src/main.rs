@@ -114,7 +114,10 @@ fn private_header_file(header: &str) -> Option<(PathBuf, String)> {
         use std::os::unix::fs::OpenOptionsExt;
         o.mode(0o600);
     }
-    match o.open(&path).and_then(|mut f| f.write_all(header.as_bytes())) {
+    match o
+        .open(&path)
+        .and_then(|mut f| f.write_all(header.as_bytes()))
+    {
         Ok(()) => Some((path.clone(), format!("@{}", path.display()))),
         Err(_) => {
             let _ = std::fs::remove_file(&path);
@@ -140,13 +143,7 @@ fn post_json(url: &str, kind: &str, token: &str, body: &Value) -> Result<(u16, S
             "POST",
             url,
         ])
-        .args([
-            "-H",
-            &hdr_arg,
-            "-H",
-            "Content-Type: application/json",
-            "-d",
-        ])
+        .args(["-H", &hdr_arg, "-H", "Content-Type: application/json", "-d"])
         .arg(body.to_string())
         .output();
     if let Some((p, _)) = &hdr {
@@ -219,19 +216,19 @@ fn out_path(arg: Option<&str>, session: &Value) -> PathBuf {
     } else {
         PathBuf::from(&name)
     };
-    if path.is_relative() {
-        if let Some(cwd) = session.pointer("/cwd").and_then(Value::as_str) {
-            return PathBuf::from(cwd).join(path);
-        }
+    if path.is_relative()
+        && let Some(cwd) = session.pointer("/cwd").and_then(Value::as_str)
+    {
+        return PathBuf::from(cwd).join(path);
     }
     path
 }
 
 fn download(url: &str, path: &std::path::Path) -> Result<u64, String> {
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-        }
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     let status = std::process::Command::new("curl")
         .args(["-sSL", "--max-time", "180", "-o"])
@@ -504,10 +501,10 @@ fn finish_download(job: &Value, session: &Value) -> Result<String, String> {
             .unwrap_or("");
         let token = env_key(env)?;
         // Content endpoints return the bytes directly.
-        if let Some(parent) = path.parent() {
-            if !parent.as_os_str().is_empty() {
-                std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-            }
+        if let Some(parent) = path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
         let hdr = private_header_file(&auth_header("bearer", &token));
         let hdr_arg = hdr
@@ -588,10 +585,7 @@ fn act_generate(args: &Value, session: &Value) -> Result<String, String> {
 
     let mut tried: Vec<String> = Vec::new();
     for (name, env, default_model) in targets {
-        let token = match env_key(env) {
-            Ok(t) => t,
-            Err(e) => return Err(e),
-        };
+        let token = env_key(env)?;
         let model = if model_arg.is_empty() {
             std::env::var(format!("{}_VIDEO_MODEL", name.to_uppercase()))
                 .ok()
@@ -752,10 +746,10 @@ fn run_command(argv: &[&str]) -> String {
         .collect();
     let mut jobs_note = String::new();
     let jobs = load_jobs();
-    if let Some(m) = jobs.as_object() {
-        if !m.is_empty() {
-            jobs_note = format!(" Jobs on file: {}.", m.len());
-        }
+    if let Some(m) = jobs.as_object()
+        && !m.is_empty()
+    {
+        jobs_note = format!(" Jobs on file: {}.", m.len());
     }
     let _ = argv;
     format!(

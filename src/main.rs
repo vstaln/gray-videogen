@@ -911,16 +911,25 @@ mod tests {
     fn persisted_done_job_downloads() {
         let _g = LOCK.lock().unwrap();
         let _h = TempHome::new();
+        let src = std::env::temp_dir().join(format!("vg-src-{}.mp4", std::process::id()));
+        std::fs::write(&src, b"video").unwrap();
+        let src_url = format!(
+            "file:///{}",
+            src.to_string_lossy()
+                .replace('\\', "/")
+                .trim_start_matches('/')
+        );
         let out = std::env::temp_dir().join(format!("vg-test-{}.mp4", std::process::id()));
         let job = json!({
             "provider": "xai", "job_id": "xai-test1", "status": "done",
-            "video_url": "file:///etc/hostname", "out": out.to_string_lossy(),
+            "video_url": src_url, "out": out.to_string_lossy(),
             "prompt": "t", "model": "m",
         });
         persist(&job);
         let r = tool(json!({"action": "status", "job": "xai-test1"}));
         assert!(r["content"].as_str().unwrap().contains("saved"), "{r}");
         let _ = std::fs::remove_file(&out);
+        let _ = std::fs::remove_file(&src);
     }
 
     #[test]
